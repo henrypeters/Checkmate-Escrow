@@ -4,7 +4,7 @@ mod errors;
 mod types;
 
 use errors::Error;
-use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, String, Symbol};
+use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, String, Symbol, Vec};
 use types::{DataKey, Match, MatchState, Platform, Winner};
 
 /// ~30 days at 5s/ledger. Used as both the TTL threshold and the extend-to value.
@@ -24,6 +24,10 @@ impl EscrowContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::MatchCount, &0u64);
         env.storage().instance().set(&DataKey::Paused, &false);
+        // initialize the active matches index to an empty Vec
+        env.storage()
+            .persistent()
+            .set(&DataKey::ActiveMatches, &Vec::new(&env));
     }
 
     /// Pause the contract — admin only. Blocks create_match, deposit, and submit_result.
@@ -120,6 +124,15 @@ impl EscrowContract {
             (Symbol::new(&env, "match"), symbol_short!("created")),
             (id, m.player1, m.player2, stake_amount),
         );
+
+        // Append to the on-chain index of active matches
+        let mut active: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveMatches)
+            .unwrap_or(Vec::new(&env));
+        active.push_back(id);
+        env.storage().persistent().set(&DataKey::ActiveMatches, &active);
 
         Ok(id)
     }
@@ -243,6 +256,24 @@ impl EscrowContract {
         let topics = (Symbol::new(&env, "match"), symbol_short!("completed"));
         env.events().publish(topics, (match_id, winner));
 
+        // Remove from active matches index
+        let active: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveMatches)
+            .unwrap_or(Vec::new(&env));
+        let mut new_active: Vec<u64> = Vec::new(&env);
+        let len = active.len();
+        let mut i = 0u32;
+        while i < len {
+            let v = active.get(i).unwrap();
+            if v != match_id {
+                new_active.push_back(v);
+            }
+            i += 1;
+        }
+        env.storage().persistent().set(&DataKey::ActiveMatches, &new_active);
+
         Ok(())
     }
 
@@ -293,7 +324,35 @@ impl EscrowContract {
             match_id,
         );
 
+        // Remove from active matches index
+        let active: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveMatches)
+            .unwrap_or(Vec::new(&env));
+        let mut new_active: Vec<u64> = Vec::new(&env);
+        let len = active.len();
+        let mut i = 0u32;
+        while i < len {
+            let v = active.get(i).unwrap();
+            if v != match_id {
+                new_active.push_back(v);
+            }
+            i += 1;
+        }
+        env.storage().persistent().set(&DataKey::ActiveMatches, &new_active);
+
         Ok(())
+    }
+
+    /// Return the list of active (not cancelled or completed) match IDs.
+    pub fn get_active_matches(env: Env) -> Result<Vec<u64>, Error> {
+        let active: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveMatches)
+            .unwrap_or(Vec::new(&env));
+        Ok(active)
     }
 
     /// Read a match by ID.

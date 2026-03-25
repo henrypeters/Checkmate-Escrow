@@ -911,3 +911,46 @@ fn test_unpause_emits_event() {
         "unpaused event not emitted"
     );
 }
+
+#[test]
+fn test_active_matches_index_correctness() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let id0 = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "idx_g0"),
+        &Platform::Lichess,
+    );
+
+    let id1 = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "idx_g1"),
+        &Platform::Lichess,
+    );
+
+    // Both matches should be present in the active index in creation order
+    let active = client.get_active_matches();
+    let expected = vec![&env, id0, id1];
+    assert_eq!(active, expected);
+
+    // Cancel the first match -> it should be removed from the index
+    client.cancel_match(&id0, &player1);
+    let active = client.get_active_matches();
+    let expected = vec![&env, id1];
+    assert_eq!(active, expected);
+
+    // Complete the remaining match -> it should be removed from the index
+    client.deposit(&id1, &player1);
+    client.deposit(&id1, &player2);
+    client.submit_result(&id1, &Winner::Player1, &oracle);
+
+    let active = client.get_active_matches();
+    assert_eq!(active.len(), 0u32);
+}
