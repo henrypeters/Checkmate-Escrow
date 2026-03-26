@@ -1508,3 +1508,77 @@ fn test_draw_refunds_exact_stake_and_zeroes_escrow_balance() {
     // Match state must be Completed
     assert_eq!(client.get_match(&id).state, MatchState::Completed);
 }
+
+// ── deposit event ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_deposit_emits_deposit_event_for_player1() {
+    let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "deposit_event_p1"),
+        &Platform::Lichess,
+    );
+
+    client.deposit(&id, &player1);
+
+    let events = env.events().all();
+    let expected_topics = vec![
+        &env,
+        Symbol::new(&env, "match").into_val(&env),
+        soroban_sdk::symbol_short!("deposit").into_val(&env),
+    ];
+    let matched = events
+        .iter()
+        .find(|(_, topics, _)| *topics == expected_topics);
+    assert!(matched.is_some(), "deposit event not emitted for player1");
+
+    let (_, _, data) = matched.unwrap();
+    let (ev_id, ev_player): (u64, Address) = TryFromVal::try_from_val(&env, &data).unwrap();
+    assert_eq!(ev_id, id);
+    assert_eq!(ev_player, player1);
+}
+
+#[test]
+fn test_deposit_emits_deposit_event_for_player2() {
+    let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "deposit_event_p2"),
+        &Platform::Lichess,
+    );
+
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+
+    let events = env.events().all();
+    let expected_topics = vec![
+        &env,
+        Symbol::new(&env, "match").into_val(&env),
+        soroban_sdk::symbol_short!("deposit").into_val(&env),
+    ];
+
+    // Collect all deposit events — there should be two (one per player)
+    let deposit_events: Vec<_> = events
+        .iter()
+        .filter(|(_, topics, _)| *topics == expected_topics)
+        .collect();
+
+    assert_eq!(deposit_events.len(), 2, "expected exactly two deposit events");
+
+    // The second deposit event must carry player2's address
+    let (_, _, data) = deposit_events[1].clone();
+    let (ev_id, ev_player): (u64, Address) = TryFromVal::try_from_val(&env, &data).unwrap();
+    assert_eq!(ev_id, id);
+    assert_eq!(ev_player, player2);
+}
