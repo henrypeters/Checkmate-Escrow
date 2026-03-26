@@ -1438,3 +1438,163 @@ fn test_is_funded_false_after_only_player1_deposits() {
         "is_funded must be true after both players deposit"
     );
 }
+
+// ── Deposit flag assertions ───────────────────────────────────────────────────
+
+/// Verifies that `player1_deposited` and `player2_deposited` flags on the
+/// `Match` struct are set correctly after each individual deposit.
+///
+/// After player1 deposits:  player1_deposited == true,  player2_deposited == false
+/// After player2 deposits:  player1_deposited == true,  player2_deposited == true
+#[test]
+fn test_deposit_flags_set_correctly_after_each_deposit() {
+    let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "deposit_flags_test"),
+        &Platform::Lichess,
+    );
+
+    // Before any deposit: both flags must be false
+    let m = client.get_match(&id);
+    assert!(!m.player1_deposited, "player1_deposited must be false before any deposit");
+    assert!(!m.player2_deposited, "player2_deposited must be false before any deposit");
+
+    // After player1 deposits: only player1_deposited flips to true
+    client.deposit(&id, &player1);
+    let m = client.get_match(&id);
+    assert!(m.player1_deposited, "player1_deposited must be true after player1 deposits");
+    assert!(!m.player2_deposited, "player2_deposited must still be false after only player1 deposits");
+
+    // After player2 deposits: both flags must be true
+    client.deposit(&id, &player2);
+    let m = client.get_match(&id);
+    assert!(m.player1_deposited, "player1_deposited must remain true after player2 deposits");
+    assert!(m.player2_deposited, "player2_deposited must be true after player2 deposits");
+}
+
+// ── Draw result: exact stake refund and zero escrow balance ──────────────────
+
+/// Submit Winner::Draw and verify:
+///   1. Each player receives exactly their original stake_amount back.
+///   2. The contract escrow balance for the match is 0 after payout.
+#[test]
+fn test_draw_refunds_exact_stake_and_zeroes_escrow_balance() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let token_client = TokenClient::new(&env, &token);
+
+    let stake: i128 = 100;
+
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &stake,
+        &token,
+        &String::from_str(&env, "draw_escrow_zero"),
+        &Platform::Lichess,
+    );
+
+    // Both players deposit — escrow holds 2 * stake
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+    assert_eq!(client.get_escrow_balance(&id), 2 * stake);
+
+    // Record balances right before result submission
+    let p1_before = token_client.balance(&player1);
+    let p2_before = token_client.balance(&player2);
+
+    // Oracle submits Draw result
+    client.submit_result(&id, &Winner::Draw, &oracle);
+
+    // Each player must receive exactly stake_amount back
+    assert_eq!(
+        token_client.balance(&player1),
+        p1_before + stake,
+        "player1 must receive exactly stake_amount on draw"
+    );
+    assert_eq!(
+        token_client.balance(&player2),
+        p2_before + stake,
+        "player2 must receive exactly stake_amount on draw"
+    );
+
+    // Contract escrow balance must be zero — no funds left behind
+    assert_eq!(
+        client.get_escrow_balance(&id),
+        0,
+        "escrow balance must be 0 after draw payout"
+    );
+
+    // Match state must be Completed
+    assert_eq!(client.get_match(&id).state, MatchState::Completed);
+}
+
+// ── MatchCount increments correctly across sequential creates ────────────────
+
+/// Creates 5 matches and verifies:
+///   1. Each call to create_match returns IDs 0 through 4 in order.
+///   2. MatchCount in instance storage equals 5 after all creates.
+///   3. get_match(id) for each ID returns a Match whose fields match what was
+///      passed to create_match (player1, player2, stake_amount, game_id, platform).
+#[test]
+fn test_match_count_increments_and_get_match_returns_correct_data() {
+    let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let game_ids = [
+        "count_game_0",
+        "count_game_1",
+        "count_game_2",
+        "count_game_3",
+        "count_game_4",
+    ];
+    let stakes: [i128; 5] = [10, 20, 30, 40, 50];
+
+    // Create 5 matches and assert each returned ID is sequential.
+    for i in 0..5_u64 {
+        let id = client.create_match(
+            &player1,
+            &player2,
+            &stakes[i as usize],
+            &token,
+            &String::from_str(&env, game_ids[i as usize]),
+            &Platform::Lichess,
+        );
+        assert_eq!(id, i, "create_match must return sequential ID {i}");
+    }
+
+    // Verify MatchCount in instance storage is exactly 5.
+    let count: u64 = env.as_contract(&contract_id, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::MatchCount)
+            .expect("MatchCount must be present in storage")
+    });
+    assert_eq!(count, 5, "MatchCount must equal 5 after creating 5 matches");
+
+    // Verify get_match returns the correct data for each ID.
+    for i in 0..5_u64 {
+        let m = client.get_match(&i);
+        assert_eq!(m.id, i, "match.id must equal {i}");
+        assert_eq!(m.player1, player1, "match.player1 mismatch for id {i}");
+        assert_eq!(m.player2, player2, "match.player2 mismatch for id {i}");
+        assert_eq!(
+            m.stake_amount,
+            stakes[i as usize],
+            "match.stake_amount mismatch for id {i}"
+        );
+        assert_eq!(
+            m.game_id,
+            String::from_str(&env, game_ids[i as usize]),
+            "match.game_id mismatch for id {i}"
+        );
+        assert_eq!(m.platform, Platform::Lichess, "match.platform mismatch for id {i}");
+        assert_eq!(m.state, MatchState::Pending, "match.state must be Pending for id {i}");
+    }
+}
