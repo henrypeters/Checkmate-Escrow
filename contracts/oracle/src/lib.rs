@@ -175,6 +175,17 @@ mod tests {
     }
 
     #[test]
+    fn test_get_result_returns_not_found_for_unknown_match() {
+        let (env, contract_id) = setup();
+        let client = OracleContractClient::new(&env, &contract_id);
+
+        // Calling get_result on a fresh contract with no submitted results
+        // should return Error::ResultNotFound
+        let result = client.try_get_result(&999u64);
+        assert_eq!(result, Err(Ok(Error::ResultNotFound)));
+    }
+
+    #[test]
     fn test_ttl_extended_on_submit_result() {
         let (env, contract_id) = setup();
         let client = OracleContractClient::new(&env, &contract_id);
