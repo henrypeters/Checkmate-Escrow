@@ -146,7 +146,7 @@ impl EscrowContract {
 
         // Update player matches index
         for player in [m.player1.clone(), m.player2.clone()] {
-            let matches: soroban_sdk::Vec<u64> = env
+            let mut matches: soroban_sdk::Vec<u64> = env
                 .storage()
                 .persistent()
                 .get(&DataKey::PlayerMatches(player.clone()))
