@@ -1647,3 +1647,26 @@ fn test_get_escrow_balance_returns_match_not_found_for_nonexistent_id() {
         "get_escrow_balance must return MatchNotFound for a non-existent match_id"
     );
 }
+
+#[test]
+fn test_match_state_transitions_pending_to_active() {
+    let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "statetrans1"),
+        &Platform::Lichess,
+    );
+
+    assert_eq!(client.get_match(&id).state, MatchState::Pending);
+
+    client.deposit(&id, &player1);
+    assert_eq!(client.get_match(&id).state, MatchState::Pending);
+
+    client.deposit(&id, &player2);
+    assert_eq!(client.get_match(&id).state, MatchState::Active);
+}
