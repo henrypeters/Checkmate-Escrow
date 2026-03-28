@@ -1705,3 +1705,31 @@ fn test_get_escrow_balance_returns_match_not_found_for_nonexistent_id() {
         "get_escrow_balance must return MatchNotFound for a non-existent match_id"
     );
 }
+
+#[test]
+fn test_create_match_rejects_contract_address_as_player() {
+    let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    // player1 == contract address
+    let result = client.try_create_match(
+        &contract_id,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "contract_p1"),
+        &Platform::Lichess,
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidPlayers)));
+
+    // player2 == contract address
+    let result = client.try_create_match(
+        &player1,
+        &contract_id,
+        &100,
+        &token,
+        &String::from_str(&env, "contract_p2"),
+        &Platform::Lichess,
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidPlayers)));
+}
