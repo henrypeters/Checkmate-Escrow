@@ -216,6 +216,15 @@ impl EscrowContract {
             (id, m.player1, m.player2, stake_amount),
         );
 
+        // Append to the on-chain index of active matches
+        let mut active: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveMatches)
+            .unwrap_or(Vec::new(&env));
+        active.push_back(id);
+        env.storage().persistent().set(&DataKey::ActiveMatches, &active);
+
         Ok(id)
     }
 
@@ -357,6 +366,24 @@ impl EscrowContract {
         let topics = (Symbol::new(&env, "match"), symbol_short!("completed"));
         env.events().publish(topics, (match_id, winner));
 
+        // Remove from active matches index
+        let active: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveMatches)
+            .unwrap_or(Vec::new(&env));
+        let mut new_active: Vec<u64> = Vec::new(&env);
+        let len = active.len();
+        let mut i = 0u32;
+        while i < len {
+            let v = active.get(i).unwrap();
+            if v != match_id {
+                new_active.push_back(v);
+            }
+            i += 1;
+        }
+        env.storage().persistent().set(&DataKey::ActiveMatches, &new_active);
+
         Ok(())
     }
 
@@ -444,6 +471,24 @@ impl EscrowContract {
             (Symbol::new(&env, "match"), symbol_short!("cancelled")),
             match_id,
         );
+
+        // Remove from active matches index
+        let active: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveMatches)
+            .unwrap_or(Vec::new(&env));
+        let mut new_active: Vec<u64> = Vec::new(&env);
+        let len = active.len();
+        let mut i = 0u32;
+        while i < len {
+            let v = active.get(i).unwrap();
+            if v != match_id {
+                new_active.push_back(v);
+            }
+            i += 1;
+        }
+        env.storage().persistent().set(&DataKey::ActiveMatches, &new_active);
 
         Ok(())
     }
