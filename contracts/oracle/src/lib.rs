@@ -414,6 +414,15 @@ mod tests {
     }
 
     #[test]
+    fn test_get_result_non_existent_match_returns_not_found() {
+        let (env, contract_id) = setup();
+        let client = OracleContractClient::new(&env, &contract_id);
+
+        let result = client.try_get_result(&999u64);
+        assert!(matches!(result, Err(Ok(Error::ResultNotFound))));
+    }
+
+    #[test]
     fn test_ttl_extended_on_submit_result() {
         let (env, contract_id, escrow_id, ..) = setup();
         let client = OracleContractClient::new(&env, &contract_id);
