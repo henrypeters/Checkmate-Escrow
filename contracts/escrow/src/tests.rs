@@ -2030,3 +2030,92 @@ fn test_submit_result_overflow_stake_returns_overflow() {
         "submit_result must return Overflow for stake_amount near i128::MAX / 2"
     );
 }
+
+// ── #186: get_match returns Completed state for all winner variants ───────────
+
+/// After submit_result with Winner::Player1, get_match must return Completed.
+#[test]
+fn test_get_match_returns_completed_state_player1_wins() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let game_id = String::from_str(&env, "completed_p1");
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &game_id,
+        &Platform::Lichess,
+    );
+
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+    seed_oracle_result(&env, &oracle, id, &game_id, Winner::Player1, &contract_id);
+    client.submit_result(&id, &oracle);
+
+    let m = client.get_match(&id);
+    assert_eq!(
+        m.state,
+        MatchState::Completed,
+        "get_match must return Completed after Player1 wins"
+    );
+}
+
+/// After submit_result with Winner::Player2, get_match must return Completed.
+#[test]
+fn test_get_match_returns_completed_state_player2_wins() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let game_id = String::from_str(&env, "completed_p2");
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &game_id,
+        &Platform::Lichess,
+    );
+
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+    seed_oracle_result(&env, &oracle, id, &game_id, Winner::Player2, &contract_id);
+    client.submit_result(&id, &oracle);
+
+    let m = client.get_match(&id);
+    assert_eq!(
+        m.state,
+        MatchState::Completed,
+        "get_match must return Completed after Player2 wins"
+    );
+}
+
+/// After submit_result with Winner::Draw, get_match must return Completed.
+#[test]
+fn test_get_match_returns_completed_state_draw() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let game_id = String::from_str(&env, "completed_draw");
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &game_id,
+        &Platform::Lichess,
+    );
+
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+    seed_oracle_result(&env, &oracle, id, &game_id, Winner::Draw, &contract_id);
+    client.submit_result(&id, &oracle);
+
+    let m = client.get_match(&id);
+    assert_eq!(
+        m.state,
+        MatchState::Completed,
+        "get_match must return Completed after Draw"
+    );
+}
